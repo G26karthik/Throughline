@@ -9,3 +9,5 @@ dist/
 video/*.webm
 video/*.mp4
 .claude/
+.env
+.env.*
