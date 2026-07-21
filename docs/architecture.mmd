@@ -1,0 +1,12 @@
+flowchart TB
+    A1[dispute_agent] --> GW
+    A2[benefit_agent] --> GW
+    A3[servicing_agent] --> GW
+    GW[Policy Gateway<br/>dict policies + check fn] -->|allow| EX[Execute mock action]
+    GW -->|block| REC[Recovery<br/>retry-once / escalate]
+    EX --> AL[(Audit Log<br/>SQLite)]
+    REC --> AL
+    AL --> API[FastAPI REST + WebSocket]
+    API --> DASH[React Dashboard]
+    DASH -->|revoke / caps / scopes| API
+    DASH -->|EMERGENCY STOP| API
