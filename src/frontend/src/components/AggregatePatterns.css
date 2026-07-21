@@ -1,0 +1,140 @@
+.aggregate-view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.stat-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-4);
+}
+
+@media (max-width: 1024px) {
+  .stat-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.stat-card {
+  padding: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.stat-value {
+  font-size: var(--font-size-xl);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.stat-label {
+  font-size: var(--font-size-sm);
+  color: var(--color-ink-secondary);
+}
+
+.aggregate-section {
+  padding: var(--space-5) var(--space-6);
+}
+
+.shape-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.shape-row {
+  display: grid;
+  grid-template-columns: 24px minmax(120px, 240px) 1fr 40px;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+@media (max-width: 1024px) {
+  .shape-row {
+    grid-template-columns: 20px 1fr 32px;
+  }
+  .shape-bar-track {
+    grid-column: 1 / -1;
+    order: 3;
+  }
+}
+
+.shape-rank {
+  font-size: var(--font-size-xs);
+  color: var(--color-ink-tertiary);
+}
+
+.shape-label {
+  font-size: var(--font-size-sm);
+  color: var(--color-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shape-bar-track {
+  height: 10px;
+  border-radius: 999px;
+  background: var(--color-canvas);
+  overflow: hidden;
+  border: 1px solid var(--color-hairline);
+}
+
+.shape-bar-fill {
+  height: 100%;
+  background: var(--color-channel-app);
+  border-radius: 999px;
+}
+
+.shape-count {
+  text-align: right;
+  font-size: var(--font-size-sm);
+  color: var(--color-ink-secondary);
+}
+
+.churn-section {
+  border-left: 3px solid var(--color-friction);
+}
+
+.churn-headline {
+  font-size: var(--font-size-md);
+  font-weight: 500;
+  line-height: 1.5;
+  margin: 0 0 var(--space-5);
+}
+
+.churn-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-4);
+}
+
+@media (max-width: 1024px) {
+  .churn-detail-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.churn-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-3);
+  background: var(--color-canvas);
+  border-radius: var(--radius-md);
+}
+
+.churn-detail-label {
+  font-size: var(--font-size-xs);
+  color: var(--color-ink-secondary);
+}
+
+.churn-detail-value {
+  font-size: var(--font-size-md);
+  font-weight: 600;
+}
