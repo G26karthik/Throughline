@@ -17,12 +17,19 @@ def test_dataset_includes_shared_device_ambiguous_case():
 
 def test_dataset_includes_unresolvable_orphan_case():
     data = generate_dataset()
-    orphan_refs = [ref for ref, cust in data["ground_truth"].items() if cust is None]
-    assert len(orphan_refs) == 1
-    ref = orphan_refs[0]
-    channel, idx = ref.split(":")
-    event = data[channel][int(idx)]
-    assert event["phone_number"] == "+1-555-9999"
+    # ground_truth=None covers both the true orphan (unmatchable identifier)
+    # and the two deliberately weak-signal shared-device app logins - all
+    # three are expected to resolve as "unresolved", not force-matched.
+    none_refs = [ref for ref, cust in data["ground_truth"].items() if cust is None]
+    assert len(none_refs) == 3
+
+    orphan_events = [
+        data[ref.split(":")[0]][int(ref.split(":")[1])]
+        for ref in none_refs
+        if ref.startswith("callcenter_events")
+    ]
+    assert len(orphan_events) == 1
+    assert orphan_events[0]["phone_number"] == "+1-555-9999"
 
 
 def test_friction_distribution_has_both_buckets():
