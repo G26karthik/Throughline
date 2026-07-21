@@ -75,6 +75,13 @@ def compute_friction(timeline: list[dict]) -> dict:
     }
 
 
+def _journey_only(timeline: list[dict]) -> list[dict]:
+    """Excludes trailing-activity pings, which aren't part of the seeded
+    journey - they'd otherwise blow out escalation-window spans (they land
+    weeks after the journey) and pollute journey-shape counts."""
+    return [e for e in timeline if e["channel"] != "trailing_activity"]
+
+
 def _journey_shape(timeline: list[dict]) -> str:
     shape = []
     for e in timeline:
@@ -94,7 +101,7 @@ def compute_aggregate_analytics(store, trailing_activity_events: list[dict]) -> 
     escalation_customers = 0
 
     for customer_id in customer_ids:
-        timeline = store.timeline_for_customer(customer_id)
+        timeline = _journey_only(store.timeline_for_customer(customer_id))
         friction = compute_friction(timeline)
         friction_by_customer[customer_id] = friction["friction_count"]
 
