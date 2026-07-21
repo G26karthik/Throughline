@@ -59,7 +59,7 @@ def main():
     add_bullet_slide(prs, "Measured Results", [
         "100% identity resolution accuracy on the seeded set (incl. ambiguous cases correctly left unresolved)",
         "6.28ms average pipeline latency per event, ingestion to resolved timeline",
-        "High-friction customers return 5x less often than clean-journey customers",
+        "High-friction customers return 5x less often, measured against our seeded synthetic dataset",
     ])
 
     add_bullet_slide(prs, "Business Impact", [
