@@ -1,7 +1,16 @@
 import time
+from dataclasses import dataclass
+from typing import Optional
 
 from src.backend.audit import AuditLog
 from src.backend.gateway import Action, Decision, PolicyGateway
+
+
+@dataclass
+class RecoveryResult:
+    decision: Decision  # decision for the ORIGINAL action - what the caller/API sees
+    retry_action: Optional[Action] = None
+    retry_decision: Optional[Decision] = None
 
 
 class Recovery:
@@ -9,15 +18,17 @@ class Recovery:
         self.gateway = gateway
         self.audit = audit
 
-    def handle(self, action: Action) -> Decision:
+    def handle(self, action: Action) -> RecoveryResult:
         decision = self.gateway.check(action)
         self.audit.record(
             action.agent_id, action.action_type, action.amount, action.target_account,
             "allow" if decision.allowed else "block", decision.reason, decision.latency_ms,
         )
         if decision.allowed:
-            return decision
+            return RecoveryResult(decision)
 
+        retry_action: Optional[Action] = None
+        retry_decision: Optional[Decision] = None
         if decision.reason.startswith("spend_cap exceeded"):
             policy = self.gateway.policies.get(action.agent_id)
             if policy is not None:
@@ -28,11 +39,11 @@ class Recovery:
                     "allow" if retry_decision.allowed else "block",
                     f"retry: {retry_decision.reason}", retry_decision.latency_ms,
                 )
-                if retry_decision.allowed:
-                    return retry_decision
 
-        self._escalate(action, decision.reason)
-        return decision
+        if retry_decision is None or not retry_decision.allowed:
+            self._escalate(action, decision.reason)
+
+        return RecoveryResult(decision, retry_action, retry_decision)
 
     def _escalate(self, action: Action, reason: str) -> None:
         self.audit.conn.execute(
