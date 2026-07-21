@@ -1,0 +1,60 @@
+flowchart TD
+    subgraph CH["Channel Generators (mocked, deterministic)"]
+        APP["app_events\n(device_id - weak signal)"]
+        WEB["web_events\n(email - hard identifier)"]
+        CALL["callcenter_events\n(phone - hard identifier)"]
+        INP["inperson_events\n(card_last4 - hard identifier)"]
+    end
+
+    subgraph RES["Identity Resolution Engine (resolution.py)"]
+        DET["Tier 1: Deterministic\nregistry lookup\n(exact email / phone / card_last4)"]
+        PROB["Tier 2: Probabilistic scoring\ntime-proximity decay (1hr window)\n+ behavioral-pattern bonus\n(fail_checkout / submit_dispute -> follow-up within 30min)"]
+        THRESH{{"score >= 0.5 ?"}}
+        UNRES["Left unresolved\n(never force-matched)"]
+    end
+
+    subgraph PIPE["Stitching Pipeline (pipeline.py)"]
+        NORM["Normalize + stitch onto\nresolved-identity timelines"]
+        LAT["Latency measured via\ntime.perf_counter()"]
+    end
+
+    STORE[("Canonical Event Store\nraw sqlite3, audit-style\ncustomer_id, channel, action,\ntimestamp, confidence, method, raw_ref, detail")]
+
+    subgraph ANALYTICS["Analytics Layer (analytics.py)"]
+        REPEAT["Repeat-contact detection"]
+        ESC["Escalation-chain detection\n(3+ channels within 1hr)"]
+        DROP["Drop-off detection\n(fail_checkout / submit_dispute,\nno follow-up within 30min)"]
+        CHURN["Churn correlation\n(friction vs. trailing activity)"]
+    end
+
+    subgraph DASH["Dashboard"]
+        TIMELINE["Single-customer\ntimeline view"]
+        AGGVIEW["Aggregate pattern view\n(unresolved cases, journey shapes,\nchurn signal)"]
+    end
+
+    APP --> DET
+    WEB --> DET
+    CALL --> DET
+    INP --> DET
+
+    DET -->|"hard identifier matched"| NORM
+    DET -->|"no hard identifier"| PROB
+    PROB --> THRESH
+    THRESH -->|"yes"| NORM
+    THRESH -->|"no"| UNRES
+    UNRES --> STORE
+
+    NORM --> LAT
+    LAT --> STORE
+    LAT --> ANALYTICS
+
+    STORE --> REPEAT
+    STORE --> ESC
+    STORE --> DROP
+    STORE --> CHURN
+
+    STORE --> TIMELINE
+    REPEAT --> AGGVIEW
+    ESC --> AGGVIEW
+    DROP --> AGGVIEW
+    CHURN --> AGGVIEW
