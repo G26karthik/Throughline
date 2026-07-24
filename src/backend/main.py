@@ -1,12 +1,18 @@
 import asyncio
+import os
 import time
+from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.staticfiles import StaticFiles
 
 from src.backend.analytics import compute_aggregate_analytics, compute_friction
 from src.backend.generators import CUSTOMER_REGISTRY, generate_dataset, generate_trailing_activity
 from src.backend.pipeline import run_pipeline
 from src.backend.store import EventStore, get_connection
+
+FRONTEND_DIST = Path(__file__).resolve().parents[2] / "src" / "frontend" / "dist"
 
 
 class ConnectionManager:
@@ -35,9 +41,8 @@ DEMO_SCATTER_REFS = ["app_events:1", "web_events:5", "callcenter_events:2", "inp
 DEMO_ORPHAN_REF = "callcenter_events:5"
 
 
-def create_app(db_path: str = "throughline.db") -> FastAPI:
-    app = FastAPI(title="Throughline - Cross-Channel Journey Stitching")
-    store = EventStore(get_connection(db_path))
+def create_app(db_path: str | None = None) -> FastAPI:
+    store = EventStore(get_connection(db_path or os.environ.get("DB_PATH", "throughline.db")))
     manager = ConnectionManager()
     state = {"trailing_activity": []}
 
@@ -68,6 +73,18 @@ def create_app(db_path: str = "throughline.db") -> FastAPI:
 
     def _customer_timeline(customer_id: str) -> list[dict]:
         return [e for e in store.timeline_for_customer(customer_id) if e["channel"] != "trailing_activity"]
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI):
+        if not store.known_customer_ids():
+            _run_seed()
+        yield
+
+    app = FastAPI(title="Throughline - Cross-Channel Journey Stitching", lifespan=lifespan)
+
+    @app.get("/health")
+    def health():
+        return {"status": "ok"}
 
     @app.post("/seed")
     def seed():
@@ -154,6 +171,9 @@ def create_app(db_path: str = "throughline.db") -> FastAPI:
         await manager.broadcast({"type": "aggregate_reveal", "aggregate": aggregate})
 
         return {"status": "complete", "resolution_accuracy_pct": accuracy_pct}
+
+    if FRONTEND_DIST.is_dir():
+        app.mount("/", StaticFiles(directory=str(FRONTEND_DIST), html=True), name="frontend")
 
     return app
 

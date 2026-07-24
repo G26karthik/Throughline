@@ -115,6 +115,17 @@ playwright install chromium   # once
 python video/record_demo.py
 ```
 
+## Deploying
+
+`Dockerfile` builds the frontend and serves it + the API from one FastAPI
+process on port 8000 (no CORS, single origin). See
+`docs/DEPLOY_EC2.md` for a free-tier AWS EC2 walkthrough.
+
+```bash
+docker build -t throughline .
+docker run -d -p 80:8000 -v ~/throughline-data:/data throughline
+```
+
 ## Repo layout
 
 ```
