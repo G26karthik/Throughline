@@ -119,16 +119,39 @@ playwright install chromium   # once
 python video/record_demo.py
 ```
 
-## Local full-stack dev (Postgres, Prometheus, Grafana)
+## Local full-stack dev (Postgres, Prometheus, Grafana, Redpanda)
 
 ```bash
 docker-compose up -d --build
 ```
 
-Brings up the app (`localhost:8000`), Postgres, Prometheus (`localhost:9090`), and
-Grafana (`localhost:3000`, admin/throughline). This is the full stack described in
-the architecture diagram — the EC2 deploy below is intentionally lighter (single
-container, sized for a free-tier instance) and doesn't run Postgres/Prometheus/Grafana.
+Brings up the app (`localhost:8000`, password in `DASHBOARD_PASSWORD`, default
+`throughline-demo`), Postgres, Prometheus (`localhost:9090`), Grafana
+(`localhost:3000`, admin/throughline), a Redpanda broker, Redpanda Console
+(`localhost:8080`), and a `consumer` service continuously reading the
+`throughline.raw-events` topic into the stitching pipeline. This is the full
+stack described in the architecture diagram — the EC2 deploy below is
+intentionally lighter (single container, sized for a free-tier instance) and
+doesn't run any of this.
+
+**Streaming ingestion** (real topic, real producer, real consumer -- an
+alternative path into the same pipeline `/seed` uses in-process):
+
+```bash
+KAFKA_BOOTSTRAP_SERVERS=localhost:19092 python -m src.backend.streaming.producer
+```
+
+Publishes one freshly-generated synthetic dataset (28 events) onto the topic;
+the always-running `consumer` service picks it up, runs it through identity
+resolution, and inserts the results into Postgres exactly like `/seed` does.
+Inspect the topic and consumer lag:
+
+```bash
+docker exec ae-redpanda-1 rpk topic describe throughline.raw-events
+docker exec ae-redpanda-1 rpk group describe throughline-pipeline
+```
+
+or visually at `localhost:8080` (Redpanda Console).
 
 ## Deploying
 

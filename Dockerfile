@@ -9,7 +9,7 @@ FROM python:3.13-slim
 WORKDIR /app
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir fastapi "uvicorn[standard]" websockets "psycopg[binary]" prometheus-client
+RUN pip install --no-cache-dir fastapi "uvicorn[standard]" websockets "psycopg[binary]" prometheus-client confluent-kafka
 
 COPY src/backend ./src/backend
 COPY --from=frontend-build /app/src/frontend/dist ./src/frontend/dist

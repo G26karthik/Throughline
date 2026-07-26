@@ -46,6 +46,60 @@ services:
     depends_on:
       - prometheus
 
+  redpanda:
+    image: docker.redpanda.com/redpandadata/redpanda:v26.1.14
+    command:
+      - redpanda
+      - start
+      - --kafka-addr internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr internal://redpanda:9092,external://localhost:19092
+      - --pandaproxy-addr internal://0.0.0.0:8082,external://0.0.0.0:18082
+      - --advertise-pandaproxy-addr internal://redpanda:8082,external://localhost:18082
+      - --schema-registry-addr internal://0.0.0.0:8081,external://0.0.0.0:18081
+      - --rpc-addr redpanda:33145
+      - --advertise-rpc-addr redpanda:33145
+      - --mode dev-container
+      - --smp 1
+      - --default-log-level=info
+    volumes:
+      - redpanda_data:/var/lib/redpanda/data
+    ports:
+      - "18081:18081"
+      - "18082:18082"
+      - "19092:19092"
+      - "19644:9644"
+
+  redpanda-console:
+    image: docker.redpanda.com/redpandadata/console:v3.9.0
+    entrypoint: /bin/sh
+    command: -c 'echo "$$CONSOLE_CONFIG_FILE" > /tmp/config.yml; /app/console'
+    environment:
+      CONFIG_FILEPATH: /tmp/config.yml
+      CONSOLE_CONFIG_FILE: |
+        kafka:
+          brokers: ["redpanda:9092"]
+        redpanda:
+          adminApi:
+            enabled: true
+            urls: ["http://redpanda:9644"]
+    ports:
+      - "8080:8080"
+    depends_on:
+      - redpanda
+
+  consumer:
+    build: .
+    command: ["python", "-m", "src.backend.streaming.consumer"]
+    environment:
+      DATABASE_URL: postgresql://throughline:throughline@postgres:5432/throughline
+      KAFKA_BOOTSTRAP_SERVERS: redpanda:9092
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redpanda:
+        condition: service_started
+
 volumes:
   postgres_data:
   grafana_data:
+  redpanda_data:
