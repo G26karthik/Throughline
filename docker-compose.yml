@@ -22,7 +22,7 @@ services:
     restart: unless-stopped
     environment:
       DATABASE_URL: postgresql://throughline:throughline@postgres:5432/throughline
-      DASHBOARD_PASSWORD: ${DASHBOARD_PASSWORD:-throughline-demo}
+      DASHBOARD_PASSWORD: ${DASHBOARD_PASSWORD-throughline-demo}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
     ports:
       - "8000:8000"
