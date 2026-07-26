@@ -42,7 +42,7 @@ DEMO_ORPHAN_REF = "callcenter_events:5"
 
 
 def create_app(db_path: str | None = None) -> FastAPI:
-    store = EventStore(get_connection(db_path or os.environ.get("DB_PATH", "throughline.db")))
+    store = EventStore(get_connection(db_path or os.environ["DATABASE_URL"]))
     manager = ConnectionManager()
     state = {"trailing_activity": []}
 
@@ -178,4 +178,4 @@ def create_app(db_path: str | None = None) -> FastAPI:
     return app
 
 
-app = create_app()
+app = create_app() if os.environ.get("DATABASE_URL") else None
