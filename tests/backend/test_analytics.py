@@ -2,11 +2,12 @@ from src.backend.generators import generate_dataset, generate_trailing_activity,
 from src.backend.store import EventStore, get_connection
 from src.backend.pipeline import run_pipeline
 from src.backend.analytics import compute_friction, compute_aggregate_analytics
+from tests.backend.conftest import TEST_DATABASE_URL
 
 
 def _seeded_store():
     data = generate_dataset()
-    store = EventStore(get_connection(":memory:"))
+    store = EventStore(get_connection(TEST_DATABASE_URL))
     run_pipeline(
         data["app_events"], data["web_events"], data["callcenter_events"], data["inperson_events"],
         CUSTOMER_REGISTRY, store,

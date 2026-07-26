@@ -1,11 +1,12 @@
 from src.backend.generators import generate_dataset, CUSTOMER_REGISTRY
 from src.backend.store import EventStore, get_connection
 from src.backend.pipeline import run_pipeline
+from tests.backend.conftest import TEST_DATABASE_URL
 
 
 def test_pipeline_inserts_every_raw_event_exactly_once():
     data = generate_dataset()
-    store = EventStore(get_connection(":memory:"))
+    store = EventStore(get_connection(TEST_DATABASE_URL))
     result = run_pipeline(
         data["app_events"], data["web_events"], data["callcenter_events"], data["inperson_events"],
         CUSTOMER_REGISTRY, store,
@@ -17,7 +18,7 @@ def test_pipeline_inserts_every_raw_event_exactly_once():
 
 def test_pipeline_reports_latency_stats():
     data = generate_dataset()
-    store = EventStore(get_connection(":memory:"))
+    store = EventStore(get_connection(TEST_DATABASE_URL))
     result = run_pipeline(
         data["app_events"], data["web_events"], data["callcenter_events"], data["inperson_events"],
         CUSTOMER_REGISTRY, store,
@@ -29,7 +30,7 @@ def test_pipeline_reports_latency_stats():
 
 def test_resolved_customer_timeline_ordered_and_detailed():
     data = generate_dataset()
-    store = EventStore(get_connection(":memory:"))
+    store = EventStore(get_connection(TEST_DATABASE_URL))
     run_pipeline(
         data["app_events"], data["web_events"], data["callcenter_events"], data["inperson_events"],
         CUSTOMER_REGISTRY, store,
@@ -43,7 +44,7 @@ def test_resolved_customer_timeline_ordered_and_detailed():
 
 def test_unresolved_events_land_in_store_with_null_customer():
     data = generate_dataset()
-    store = EventStore(get_connection(":memory:"))
+    store = EventStore(get_connection(TEST_DATABASE_URL))
     run_pipeline(
         data["app_events"], data["web_events"], data["callcenter_events"], data["inperson_events"],
         CUSTOMER_REGISTRY, store,

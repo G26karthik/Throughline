@@ -1,10 +1,11 @@
 from fastapi.testclient import TestClient
 
 from src.backend.main import create_app
+from tests.backend.conftest import TEST_DATABASE_URL
 
 
 def make_client():
-    app = create_app(db_path=":memory:")
+    app = create_app(db_path=TEST_DATABASE_URL)
     return TestClient(app)
 
 
