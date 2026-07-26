@@ -8,6 +8,9 @@ TEST_DATABASE_URL = os.environ.get(
     "TEST_DATABASE_URL", "postgresql://throughline:throughline@localhost:5432/throughline_test"
 )
 
+os.environ.setdefault("DASHBOARD_PASSWORD", "test-password")
+TEST_DASHBOARD_PASSWORD = os.environ["DASHBOARD_PASSWORD"]
+
 
 @pytest.fixture(autouse=True)
 def _clean_events_table():

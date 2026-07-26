@@ -2,6 +2,8 @@ import { useState } from "react";
 import JourneyTimeline from "./components/JourneyTimeline.jsx";
 import AggregatePatterns from "./components/AggregatePatterns.jsx";
 import ResolutionDemo from "./components/ResolutionDemo.jsx";
+import LoginScreen from "./components/LoginScreen.jsx";
+import { isAuthenticated, logout } from "./api.js";
 
 const VIEWS = [
   { id: "timeline", label: "Journey Timeline" },
@@ -11,6 +13,11 @@ const VIEWS = [
 
 export default function App() {
   const [view, setView] = useState("timeline");
+  const [authed, setAuthed] = useState(isAuthenticated());
+
+  if (!authed) {
+    return <LoginScreen onSuccess={() => setAuthed(true)} />;
+  }
 
   return (
     <div className="app-shell">
@@ -32,6 +39,16 @@ export default function App() {
             </button>
           ))}
         </nav>
+        <button
+          type="button"
+          className="app-nav-btn"
+          onClick={() => {
+            logout();
+            setAuthed(false);
+          }}
+        >
+          Log out
+        </button>
       </header>
 
       <main className="app-main">

@@ -1,16 +1,18 @@
 import asyncio
 import logging
 import os
+import secrets
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 
-from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+from pydantic import BaseModel
 
 from src.backend.analytics import compute_aggregate_analytics, compute_friction
 from src.backend.generators import CUSTOMER_REGISTRY, generate_dataset, generate_trailing_activity
@@ -47,10 +49,22 @@ DEMO_SCATTER_REFS = ["app_events:1", "web_events:5", "callcenter_events:2", "inp
 DEMO_ORPHAN_REF = "callcenter_events:5"
 
 
+class LoginRequest(BaseModel):
+    password: str
+
+
 def create_app(db_path: str | None = None) -> FastAPI:
     store = EventStore(get_connection(db_path or os.environ["DATABASE_URL"]))
     manager = ConnectionManager()
     state = {"trailing_activity": []}
+    sessions: set[str] = set()
+    dashboard_password = os.environ["DASHBOARD_PASSWORD"]
+
+    def require_auth(request: Request):
+        auth = request.headers.get("authorization", "")
+        token = auth.removeprefix("Bearer ").strip()
+        if not token or token not in sessions:
+            raise HTTPException(status_code=401, detail="Not authenticated")
 
     def _store_trailing_activity(events):
         for i, e in enumerate(events):
@@ -114,6 +128,17 @@ def create_app(db_path: str | None = None) -> FastAPI:
     def health():
         return {"status": "ok"}
 
+    @app.post(
+        "/auth/login", tags=["auth"], summary="Exchange the shared dashboard password for a session token",
+        description="Single shared-secret gate in front of the analyst dashboard (not per-user auth) -- signals this resolves real-shaped customer PII, isn't a public demo. Token goes in Authorization: Bearer <token> on subsequent requests, and as ?token=<token> on the /ws connection.",
+    )
+    def login(body: LoginRequest):
+        if not secrets.compare_digest(body.password, dashboard_password):
+            raise HTTPException(status_code=401, detail="Incorrect password")
+        token = secrets.token_urlsafe(32)
+        sessions.add(token)
+        return {"token": token}
+
     @app.get("/metrics", tags=["ops"], summary="Prometheus metrics", description="Prometheus exposition-format metrics: resolution accuracy, escalation rate, pipeline event latency histogram, HTTP request volume by route.")
     def metrics():
         return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
@@ -125,6 +150,7 @@ def create_app(db_path: str | None = None) -> FastAPI:
             "resolution and the stitching pipeline, and replaces whatever was previously stored. "
             "Also runs automatically on first boot if the store is empty (see app lifespan)."
         ),
+        dependencies=[Depends(require_auth)],
     )
     def seed():
         _data, result, accuracy_pct = _run_seed()
@@ -138,6 +164,7 @@ def create_app(db_path: str | None = None) -> FastAPI:
     @app.get(
         "/customers", tags=["customers"], summary="List resolved customers with friction counts",
         description="Every customer_id with at least one resolved event, plus their event count and 0-3 friction score (repeat contact, escalation chain, drop-off).",
+        dependencies=[Depends(require_auth)],
     )
     def list_customers():
         out = []
@@ -154,6 +181,7 @@ def create_app(db_path: str | None = None) -> FastAPI:
     @app.get(
         "/timeline/{customer_id}", tags=["customers"], summary="One customer's full resolved, chronological timeline",
         description="Every resolved event for this customer across all channels, in timestamp order, annotated with which events belong to a detected escalation chain, plus repeat-contact and drop-off detail.",
+        dependencies=[Depends(require_auth)],
     )
     def get_timeline(customer_id: str):
         timeline = _customer_timeline(customer_id)
@@ -172,6 +200,7 @@ def create_app(db_path: str | None = None) -> FastAPI:
     @app.get(
         "/unresolved", tags=["customers"], summary="Events the resolution engine could not confidently attribute",
         description="Events left unresolved rather than force-matched -- below-threshold probabilistic scores and true orphan identifiers. Surfaced as a first-class output, not hidden.",
+        dependencies=[Depends(require_auth)],
     )
     def get_unresolved():
         return [e for e in store.unresolved_events() if e["channel"] != "trailing_activity"]
@@ -179,12 +208,17 @@ def create_app(db_path: str | None = None) -> FastAPI:
     @app.get(
         "/aggregate", tags=["analytics"], summary="Cross-customer journey and churn patterns",
         description="Repeat-contact and escalation rates, ranked journey shapes, drop-off points, and the churn correlation crossing computed friction against independently-generated trailing activity.",
+        dependencies=[Depends(require_auth)],
     )
     def get_aggregate():
         return compute_aggregate_analytics(store, state["trailing_activity"])
 
     @app.websocket("/ws")
     async def ws_endpoint(websocket: WebSocket):
+        token = websocket.query_params.get("token", "")
+        if token not in sessions:
+            await websocket.close(code=4401)
+            return
         await manager.connect(websocket)
         try:
             while True:
@@ -200,6 +234,7 @@ def create_app(db_path: str | None = None) -> FastAPI:
             "ambiguous case resolving honestly as unresolved, then an aggregate-pattern reveal. "
             "delay_seconds paces each broadcast step; connect to /ws before calling this."
         ),
+        dependencies=[Depends(require_auth)],
     )
     async def demo_run(delay_seconds: float = 0.6):
         data, result, accuracy_pct = _run_seed()
