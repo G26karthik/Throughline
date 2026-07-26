@@ -4,11 +4,14 @@ import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from src.backend.analytics import compute_aggregate_analytics, compute_friction
 from src.backend.generators import CUSTOMER_REGISTRY, generate_dataset, generate_trailing_activity
+from src.backend.metrics import ESCALATION_RATE_PCT, HTTP_REQUESTS_TOTAL, RESOLUTION_ACCURACY_PCT
 from src.backend.pipeline import run_pipeline
 from src.backend.store import EventStore, get_connection
 
@@ -68,6 +71,10 @@ def create_app(db_path: str | None = None) -> FastAPI:
             if result["resolved"][ref].resolved_customer_id == expected
         )
         accuracy_pct = 100 * correct / len(data["ground_truth"])
+        RESOLUTION_ACCURACY_PCT.set(accuracy_pct)
+
+        aggregate = compute_aggregate_analytics(store, activity)
+        ESCALATION_RATE_PCT.set(aggregate["escalation_rate_pct"])
 
         return data, result, accuracy_pct
 
@@ -82,9 +89,21 @@ def create_app(db_path: str | None = None) -> FastAPI:
 
     app = FastAPI(title="Throughline - Cross-Channel Journey Stitching", lifespan=lifespan)
 
+    @app.middleware("http")
+    async def _count_requests(request: Request, call_next):
+        response = await call_next(request)
+        route = request.scope.get("route")
+        path = getattr(route, "path", request.url.path)
+        HTTP_REQUESTS_TOTAL.labels(method=request.method, path=path, status=response.status_code).inc()
+        return response
+
     @app.get("/health")
     def health():
         return {"status": "ok"}
+
+    @app.get("/metrics")
+    def metrics():
+        return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
     @app.post("/seed")
     def seed():

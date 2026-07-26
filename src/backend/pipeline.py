@@ -3,6 +3,7 @@ stitches them onto resolved-identity timelines in the event store.
 """
 import time
 
+from src.backend.metrics import PIPELINE_EVENT_LATENCY_MS
 from src.backend.resolution import resolve_identities
 from src.backend.store import EventStore
 
@@ -35,10 +36,12 @@ def run_pipeline(app_events, web_events, callcenter_events, inperson_events, reg
     for raw_ref, r in resolved.items():
         channel, idx_str = raw_ref.split(":")
         raw_event = channel_lookup[channel][int(idx_str)]
+        event_start = time.perf_counter()
         store.insert(
             r.resolved_customer_id, r.channel, raw_event.get("action") or raw_event.get("reason_code"),
             r.timestamp, r.confidence, r.method, raw_ref, _detail_for(channel, raw_event),
         )
+        PIPELINE_EVENT_LATENCY_MS.observe((time.perf_counter() - event_start) * 1000)
         inserted += 1
     pipeline_latency_ms = (time.perf_counter() - start) * 1000
 

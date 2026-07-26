@@ -6,3 +6,4 @@ python-pptx>=1.0.2
 playwright>=1.47.0
 websockets>=13.1
 psycopg[binary]>=3.2.0
+prometheus-client>=0.21.0
