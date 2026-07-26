@@ -6,19 +6,26 @@ flowchart TD
         INP["inperson_events\n(card_last4 - hard identifier)"]
     end
 
+    subgraph STREAM["Streaming Ingestion (Redpanda) - alternative real path"]
+        PROD["Producer\nthroughline.raw-events topic"]
+        CONS["Consumer\n(idle-gap batching)"]
+    end
+
     subgraph RES["Identity Resolution Engine (resolution.py)"]
+        VALID["Field validation\n(email / phone / card_last4)\nmalformed -> rejected + logged"]
         DET["Tier 1: Deterministic\nregistry lookup\n(exact email / phone / card_last4)"]
         PROB["Tier 2: Probabilistic scoring\ntime-proximity decay (1hr window)\n+ behavioral-pattern bonus\n(fail_checkout / submit_dispute -> follow-up within 30min)"]
         THRESH{{"score >= 0.5 ?"}}
         UNRES["Left unresolved\n(never force-matched)"]
+        LOG["Structured decision log\n(method, matched field/score, threshold)"]
     end
 
     subgraph PIPE["Stitching Pipeline (pipeline.py)"]
         NORM["Normalize + stitch onto\nresolved-identity timelines"]
-        LAT["Latency measured via\ntime.perf_counter()"]
+        LAT["Per-event latency\n(histogram, not just average)"]
     end
 
-    STORE[("Canonical Event Store\nraw sqlite3, audit-style\ncustomer_id, channel, action,\ntimestamp, confidence, method, raw_ref, detail")]
+    STORE[("Canonical Event Store\nPostgres, audit-style\ncustomer_id, channel, action,\ntimestamp, confidence, method, raw_ref, detail")]
 
     subgraph ANALYTICS["Analytics Layer (analytics.py)"]
         REPEAT["Repeat-contact detection"]
@@ -26,6 +33,18 @@ flowchart TD
         DROP["Drop-off detection\n(fail_checkout / submit_dispute,\nno follow-up within 30min)"]
         CHURN["Churn correlation\n(friction vs. trailing activity)"]
     end
+
+    subgraph AI["AI Analyst Assistant (Gemini) - presentation only"]
+        SUMM["NL journey summary"]
+        NLQ["NL query over resolved data"]
+    end
+
+    subgraph OBS["Observability"]
+        PROM["Prometheus\n/metrics: accuracy, escalation rate,\nlatency histogram, request volume"]
+        GRAF["Grafana dashboard"]
+    end
+
+    GATE{"Access gate\n(shared password -> session token)"}
 
     subgraph DASH["Dashboard"]
         TIMELINE["Single-customer\ntimeline view"]
@@ -37,24 +56,44 @@ flowchart TD
     CALL --> DET
     INP --> DET
 
-    DET -->|"hard identifier matched"| NORM
-    DET -->|"no hard identifier"| PROB
+    APP -.->|"or produce"| PROD
+    WEB -.->|"or produce"| PROD
+    CALL -.->|"or produce"| PROD
+    INP -.->|"or produce"| PROD
+    PROD -.-> CONS
+    CONS -.->|"same pipeline, sourced from Kafka/Redpanda"| VALID
+
+    DET --> VALID
+    VALID -->|"hard identifier matched"| NORM
+    VALID -->|"no hard identifier"| PROB
     PROB --> THRESH
     THRESH -->|"yes"| NORM
     THRESH -->|"no"| UNRES
     UNRES --> STORE
+    DET --> LOG
+    PROB --> LOG
+    UNRES --> LOG
 
     NORM --> LAT
     LAT --> STORE
     LAT --> ANALYTICS
+    LAT --> PROM
 
     STORE --> REPEAT
     STORE --> ESC
     STORE --> DROP
     STORE --> CHURN
 
+    STORE --> SUMM
+    ANALYTICS --> NLQ
+
+    PROM --> GRAF
+
+    GATE --> DASH
     STORE --> TIMELINE
     REPEAT --> AGGVIEW
     ESC --> AGGVIEW
     DROP --> AGGVIEW
     CHURN --> AGGVIEW
+    SUMM --> DASH
+    NLQ --> DASH

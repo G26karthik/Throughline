@@ -55,17 +55,17 @@ All figures below are measured against a live server instance (real SQLite file,
 4. **Dual consumption** — every resolved (and unresolved) event lands in an audit-style SQLite store *and* feeds the analytics layer in the same pass, so the two never drift out of sync.
 5. **Analytics computed from the resolved timeline itself** — repeat-contact, escalation-chain, and drop-off detection run against what the resolution engine actually produced, not against seeded ground truth, so the churn correlation is a genuine derived finding.
 6. **Live demo sequence** — a WebSocket-driven `/demo/run` endpoint replays: four scattered events arriving from different channels → resolving live onto one identity → a deliberately unresolved case appearing → an aggregate pattern reveal. This is built for a judge-facing walkthrough, not just an API contract.
-7. **Testing** — 33 passing pytest tests covering generators, resolution (including both ambiguous cases above), the pipeline, and analytics.
+7. **Testing** — 35 passing pytest tests covering generators, resolution (including both ambiguous cases above), the pipeline, analytics, and the API (auth included), run against a real Postgres in CI on every push.
 
 ## 6. Technical Details
 
-**Stack:** FastAPI + raw `sqlite3` (no ORM, no OPA, no Postgres, no Redis) on the backend; React + Vite on the frontend. This is a deliberate choice, not a shortcut — a two-tier resolution engine and an append-only audit event store are the kind of financial-services-adjacent logic that benefits from being boring and directly inspectable rather than hidden behind an ORM abstraction or a policy engine judges can't easily read line by line.
+**Stack:** FastAPI + Postgres (raw `psycopg`, no ORM, no OPA) on the backend; React + Vite on the frontend. This is a deliberate choice, not a shortcut — a two-tier resolution engine and an append-only audit event store are the kind of financial-services-adjacent logic that benefits from being boring and directly inspectable rather than hidden behind an ORM abstraction or a policy engine judges can't easily read line by line. Built on top: real Redpanda streaming ingestion (a real topic, producer, and consumer feeding the same pipeline), Prometheus/Grafana observability, structured decision logging with input validation on every identity field, a shared-password access gate, CI, and a Gemini-powered AI analyst assistant that only reads already-resolved data.
 
 **Architecture:**
 
 ![architecture](architecture.png)
 
-The four channel generators feed the identity resolution engine (deterministic registry match, then probabilistic scoring for anything without a hard identifier). Resolved events flow into the stitching pipeline, which writes onto both the audit-style SQLite event store and the analytics layer in the same pass. Both the store and the analytics layer feed the dashboard: a single-customer timeline view, and an aggregate pattern view.
+The four channel generators feed the identity resolution engine (deterministic registry match, then probabilistic scoring for anything without a hard identifier) either in-process or via a real Redpanda topic/consumer. Resolved events flow into the stitching pipeline, which writes onto both the audit-style Postgres event store and the analytics layer in the same pass, with every resolution decision structured-logged to the exact rule/score that produced it. The store and analytics layer feed the dashboard (behind a shared-password access gate) — a single-customer timeline view, an aggregate pattern view, and an AI-assistant layer that summarizes/queries the already-resolved data in plain English without touching resolution logic. Prometheus scrapes accuracy/latency/escalation/request metrics into a Grafana dashboard throughout.
 
 **Phase 6 demo sequence:**
 
@@ -82,15 +82,18 @@ flowchart LR
 - The known-customer registry, the ambiguous shared-device pair, and the orphan phone number are all intentionally constructed test cases, designed to stress the resolution engine's honesty under ambiguity — not drawn from or representative of any real population.
 - Thresholds (1-hour time-proximity window, 30-minute behavioral-pattern window, 0.5 confidence threshold) are explainable, rule-based constants chosen for a defensible pitch narrative, not tuned against real-world data.
 
-**Scalability — the production migration path:**
+**Scalability — the production migration path, built not just claimed:**
 
-This prototype is intentionally built on a boring, auditable stack so the logic — not the infrastructure — is what's being evaluated. The production migration path is explicit, not hand-waved:
+This prototype is intentionally built on a boring, auditable stack so the logic — not the infrastructure — is what's being evaluated. The production migration path isn't hand-waved; most of it is demonstrated, not just described:
 
-- **Ingestion:** the in-process mock event generators become real streaming ingestion at scale — **Kafka or Spark Streaming** — consuming actual app, web, call-center, and in-person event feeds instead of synthetic ones.
-- **Event store:** the raw SQLite file becomes a warehouse-grade store — **Snowflake or BigQuery** — for the canonical, audit-style event log, preserving the same schema (customer_id, channel, action, timestamp, confidence, method, raw_ref, detail) at production scale and retention.
+- **Ingestion — built:** the in-process mock event generators are also producible onto a real **Redpanda** (Kafka-API compatible) topic, with a real consumer feeding the same stitching pipeline `/seed` uses in-process. Same resolution logic either way; this is an additional real path, not a mocked one.
+- **Event store — built:** the canonical, audit-style event log runs on **Postgres**, same schema (customer_id, channel, action, timestamp, confidence, method, raw_ref, detail), same append-only design, now durable and multi-connection-safe.
+- **Observability — built:** Prometheus scrapes resolution accuracy, escalation rate, a real per-event pipeline-latency histogram, and request volume; a provisioned Grafana dashboard renders all four from live data.
+- **AI analyst layer — built:** a Gemini-powered natural-language journey summary and NL query over the aggregate view, strictly additive on top of already-resolved, already-audited data — zero LLM involvement in identity resolution itself.
+- **Warehouse mirror — remaining:** the canonical Postgres store still has a path to a warehouse-grade mirror — **Snowflake or BigQuery** — for analytical workloads at production retention/scale. Not yet built; the primary store stays Postgres either way.
 - **Analytics layer:** the output shape of the analytics layer (repeat-contact, escalation, drop-off, churn correlation) is deliberately designed to **feed a downstream product analytics tool like Amplitude or Mixpanel**, not to replace one. Throughline's job is to solve cross-channel identity resolution and produce a trustworthy, resolved event stream — not to reinvent a product analytics platform.
 
-This is the deliberate migration path from a boring, auditable prototype stack to production infrastructure — not a system that's half-built now and hoping to grow into these pieces later.
+This is a migration path most of which is already standing, not a system that's half-built now and hoping to grow into these pieces later.
 
 ---
 

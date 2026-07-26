@@ -15,14 +15,25 @@ Built for AmEx CodeStreet 2026, theme: Cross-Channel Journey Stitching. See
 
 ## Stack
 
-- Backend: FastAPI + raw `sqlite3` (no ORM, no Postgres/Redis)
+- Backend: FastAPI + Postgres (raw `psycopg`, no ORM)
 - Identity resolution: two-tier rule-based matching (deterministic registry
   lookup, then confidence-scored probabilistic linkage) — no ML, deliberately
-  explainable
+  explainable; zero LLM involvement in resolution decisions
+- Streaming ingestion: Redpanda (Kafka-API compatible) — a real topic,
+  producer, and consumer feed the same stitching pipeline `/seed` uses
+  in-process, as an alternative real path, not a replacement
+- Observability: Prometheus (resolution accuracy, escalation rate, pipeline
+  latency histogram, request volume) + a provisioned Grafana dashboard
+- AI analyst assistant: Gemini-powered natural-language journey summaries
+  and NL queries, strictly a presentation layer over already-resolved data
+- CI: GitHub Actions runs the full test suite (with a real Postgres service
+  container) on every push
+- Access gate: shared-password session auth in front of the analyst
+  dashboard; `/health` and `/metrics` stay open for probes/scraping
 - Frontend: React 18 + Vite, WebSocket-driven live resolution demo
-- Boring, auditable stack by design; see the proposal's scalability section
-  for the production migration path (Kafka/Spark, Snowflake/BigQuery,
-  Amplitude/Mixpanel)
+- Boring, auditable stack by design; one remaining migration-path item not
+  yet built: a Snowflake/BigQuery mirror of Postgres (see the proposal's
+  scalability section)
 
 ## Setup
 
