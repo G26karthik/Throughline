@@ -1,3 +1,10 @@
+> **Note:** this document describes the original single-container SQLite deploy,
+> still what the live instance runs. The app now requires Postgres
+> (`DATABASE_URL`), so don't `git pull && docker build` on this instance without
+> also standing up Postgres there — see `docker-compose.yml` for the full stack,
+> which needs more RAM than this instance's free-tier t2.micro has. Redeploying
+> the current stack to EC2 is a follow-up decision, not yet done.
+
 # Deploying to AWS EC2 (Free Tier)
 
 Single container, single `t2.micro`/`t3.micro` instance, SQLite on the

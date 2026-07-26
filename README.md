@@ -115,15 +115,29 @@ playwright install chromium   # once
 python video/record_demo.py
 ```
 
+## Local full-stack dev (Postgres, Prometheus, Grafana)
+
+```bash
+docker-compose up -d --build
+```
+
+Brings up the app (`localhost:8000`), Postgres, Prometheus (`localhost:9090`), and
+Grafana (`localhost:3000`, admin/throughline). This is the full stack described in
+the architecture diagram — the EC2 deploy below is intentionally lighter (single
+container, sized for a free-tier instance) and doesn't run Postgres/Prometheus/Grafana.
+
 ## Deploying
 
 `Dockerfile` builds the frontend and serves it + the API from one FastAPI
-process on port 8000 (no CORS, single origin). See
-`docs/DEPLOY_EC2.md` for a free-tier AWS EC2 walkthrough.
+process on port 8000 (no CORS, single origin), and now requires a reachable
+Postgres via `DATABASE_URL` — see `docker-compose.yml` for the full stack, or
+point `DATABASE_URL` at any Postgres instance for a standalone `docker run`.
+See `docs/DEPLOY_EC2.md` for a free-tier AWS EC2 walkthrough (that document's
+own note explains why the live instance still runs the pre-Postgres image).
 
 ```bash
 docker build -t throughline .
-docker run -d -p 80:8000 -v ~/throughline-data:/data throughline
+docker run -d -p 80:8000 -e DATABASE_URL=postgresql://user:pass@host:5432/db throughline
 ```
 
 ## Repo layout
