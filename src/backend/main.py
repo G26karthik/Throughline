@@ -1,8 +1,11 @@
 import asyncio
+import logging
 import os
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
+
+logging.basicConfig(level=logging.INFO, format="%(message)s")
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import Response

@@ -1,11 +1,15 @@
 """Normalizes raw per-channel events into the canonical event shape and
 stitches them onto resolved-identity timelines in the event store.
 """
+import json
+import logging
 import time
 
 from src.backend.metrics import PIPELINE_EVENT_LATENCY_MS
 from src.backend.resolution import resolve_identities
 from src.backend.store import EventStore
+
+logger = logging.getLogger("throughline.pipeline")
 
 
 def _detail_for(channel: str, raw_event: dict) -> str:
@@ -44,6 +48,12 @@ def run_pipeline(app_events, web_events, callcenter_events, inperson_events, reg
         PIPELINE_EVENT_LATENCY_MS.observe((time.perf_counter() - event_start) * 1000)
         inserted += 1
     pipeline_latency_ms = (time.perf_counter() - start) * 1000
+
+    logger.info(json.dumps({
+        "event": "pipeline_run_complete", "inserted": inserted,
+        "pipeline_latency_ms": pipeline_latency_ms,
+        "avg_latency_per_event_ms": pipeline_latency_ms / inserted if inserted else 0.0,
+    }))
 
     return {
         "inserted": inserted,
