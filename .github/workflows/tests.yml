@@ -36,4 +36,4 @@ jobs:
       - name: Run backend test suite
         env:
           TEST_DATABASE_URL: postgresql://throughline:throughline@localhost:5432/throughline_test
-        run: pytest tests/backend -v
+        run: python -m pytest tests/backend -v

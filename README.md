@@ -38,11 +38,12 @@ cd ../..
 
 ## Run
 
-Two processes, in separate terminals, from the repo root:
+Needs Postgres reachable via `DATABASE_URL` -- easiest is `docker-compose up -d postgres`
+(see "Local full-stack dev" below), then two processes in separate terminals from the repo root:
 
 ```bash
 # Terminal 1: backend (FastAPI + WebSocket), port 8000
-python -m uvicorn src.backend.main:app --port 8000
+DATABASE_URL=postgresql://throughline:throughline@localhost:5432/throughline python -m uvicorn src.backend.main:app --port 8000
 
 # Terminal 2: frontend dashboard, port 5173
 cd src/frontend
@@ -60,8 +61,11 @@ curl -X POST http://localhost:8000/seed
 
 ## Run the tests
 
+Also needs Postgres reachable (`docker-compose up -d postgres` creates the
+`throughline_test` database automatically via `docker/postgres/init.sql`):
+
 ```bash
-pytest tests/backend -v
+python -m pytest tests/backend -v
 ```
 
 33 tests covering the event generators, identity resolution engine (incl.
