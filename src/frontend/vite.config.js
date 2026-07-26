@@ -6,11 +6,12 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      "/api": {
-        target: "http://localhost:8000",
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api/, ""),
-      },
+      "/seed": "http://localhost:8000",
+      "/customers": "http://localhost:8000",
+      "/timeline": "http://localhost:8000",
+      "/unresolved": "http://localhost:8000",
+      "/aggregate": "http://localhost:8000",
+      "/demo": "http://localhost:8000",
       "/ws": {
         target: "ws://localhost:8000",
         ws: true,
