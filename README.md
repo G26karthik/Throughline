@@ -30,10 +30,11 @@ Built for AmEx CodeStreet 2026, theme: Cross-Channel Journey Stitching. See
   container) on every push
 - Access gate: shared-password session auth in front of the analyst
   dashboard; `/health` and `/metrics` stay open for probes/scraping
+- Warehouse mirror: one-way batch export from Postgres to Snowflake for
+  analytical workloads — Postgres stays the primary/canonical store
 - Frontend: React 18 + Vite, WebSocket-driven live resolution demo
-- Boring, auditable stack by design; one remaining migration-path item not
-  yet built: a Snowflake/BigQuery mirror of Postgres (see the proposal's
-  scalability section)
+- Boring, auditable stack by design; see the proposal's scalability section
+  for what's built vs. still forward-looking (Amplitude/Mixpanel downstream)
 
 ## Setup
 
@@ -171,6 +172,19 @@ only, zero LLM involvement in resolution/analytics decisions):
 POST /ai/summarize/{customer_id}   # plain-English narrative of a resolved journey
 POST /ai/query {"question": "..."} # natural-language question over already-resolved data
 ```
+
+**Snowflake warehouse mirror** (needs the six `SNOWFLAKE_*` vars in `.env`;
+one-way batch export, Postgres stays the primary/canonical store):
+
+```bash
+python -m src.backend.warehouse.snowflake_mirror
+```
+
+Creates the database/schema/table if they don't exist, truncates and reloads
+the full `EVENTS` mirror from Postgres. Snowflake enforces MFA on password
+auth for human users -- generate a Personal Access Token (Snowsight ->
+Admin -> Users & Roles -> your user -> Programmatic access tokens) and use
+that as `SNOWFLAKE_PASSWORD` instead of your login password.
 
 ## Deploying
 
