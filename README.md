@@ -10,8 +10,122 @@ cross-customer patterns correlated with repeat contact and churn.
 accounts, or customer data are involved anywhere in this codebase.
 
 Built for AmEx CodeStreet 2026, theme: Cross-Channel Journey Stitching. See
-`docs/proposal.md` for the full Round 1 submission and `docs/architecture.svg`
-/ `docs/architecture.png` for the architecture diagram.
+`docs/proposal.md` for the full Round 1 submission. The diagram below is
+generated from `docs/architecture.mmd` (source of truth — regenerate the
+`.svg`/`.png` copies from it, see "Regenerating the deliverables").
+
+## Architecture
+
+```mermaid
+flowchart TD
+    subgraph CH["Channel Generators (mocked, deterministic)"]
+        APP["app_events\n(device_id - weak signal)"]
+        WEB["web_events\n(email - hard identifier)"]
+        CALL["callcenter_events\n(phone - hard identifier)"]
+        INP["inperson_events\n(card_last4 - hard identifier)"]
+    end
+
+    subgraph STREAM["Streaming Ingestion (Redpanda) - alternative real path"]
+        PROD["Producer\nthroughline.raw-events topic"]
+        CONS["Consumer\n(idle-gap batching)"]
+    end
+
+    subgraph RES["Identity Resolution Engine (resolution.py)"]
+        VALID["Field validation\n(email / phone / card_last4)\nmalformed -> rejected + logged"]
+        DET["Tier 1: Deterministic\nregistry lookup\n(exact email / phone / card_last4)"]
+        PROB["Tier 2: Probabilistic scoring\ntime-proximity decay (1hr window)\n+ behavioral-pattern bonus\n(fail_checkout / submit_dispute -> follow-up within 30min)"]
+        THRESH{{"score >= 0.5 ?"}}
+        UNRES["Left unresolved\n(never force-matched)"]
+        LOG["Structured decision log\n(method, matched field/score, threshold)"]
+    end
+
+    subgraph PIPE["Stitching Pipeline (pipeline.py)"]
+        NORM["Normalize + stitch onto\nresolved-identity timelines"]
+        LAT["Per-event latency\n(histogram, not just average)"]
+    end
+
+    STORE[("Canonical Event Store\nPostgres, audit-style\ncustomer_id, channel, action,\ntimestamp, confidence, method, raw_ref, detail")]
+
+    subgraph ANALYTICS["Analytics Layer (analytics.py)"]
+        REPEAT["Repeat-contact detection"]
+        ESC["Escalation-chain detection\n(3+ channels within 1hr)"]
+        DROP["Drop-off detection\n(fail_checkout / submit_dispute,\nno follow-up within 30min)"]
+        CHURN["Churn correlation\n(friction vs. trailing activity)"]
+    end
+
+    subgraph AI["AI Analyst Assistant (Gemini) - presentation only"]
+        SUMM["NL journey summary"]
+        NLQ["NL query over resolved data"]
+    end
+
+    subgraph OBS["Observability"]
+        PROM["Prometheus\n/metrics: accuracy, escalation rate,\nlatency histogram, request volume"]
+        GRAF["Grafana dashboard"]
+    end
+
+    SNOW[("Snowflake\none-way batch mirror,\nrun manually - not scheduled")]
+
+    GATE{"Access gate\n(shared password -> session token,\noptional per deployment)"}
+
+    subgraph DASH["Dashboard"]
+        TIMELINE["Single-customer\ntimeline view"]
+        AGGVIEW["Aggregate pattern view\n(unresolved cases, journey shapes,\nchurn signal)"]
+    end
+
+    APP --> VALID
+    WEB --> VALID
+    CALL --> VALID
+    INP --> VALID
+
+    APP -.->|"or produce"| PROD
+    WEB -.->|"or produce"| PROD
+    CALL -.->|"or produce"| PROD
+    INP -.->|"or produce"| PROD
+    PROD -.-> CONS
+    CONS -.->|"same pipeline, sourced from Kafka/Redpanda"| VALID
+
+    VALID --> DET
+    DET -->|"hard identifier matched"| NORM
+    DET -->|"no hard identifier"| PROB
+    PROB --> THRESH
+    THRESH -->|"yes"| NORM
+    THRESH -->|"no"| UNRES
+    UNRES --> STORE
+    DET --> LOG
+    PROB --> LOG
+    UNRES --> LOG
+
+    NORM --> LAT
+    LAT --> STORE
+    LAT --> ANALYTICS
+    LAT --> PROM
+
+    STORE --> REPEAT
+    STORE --> ESC
+    STORE --> DROP
+    STORE --> CHURN
+
+    STORE --> SUMM
+    ANALYTICS --> NLQ
+
+    PROM --> GRAF
+    STORE -.->|"manual export"| SNOW
+
+    GATE --> DASH
+    STORE --> TIMELINE
+    REPEAT --> AGGVIEW
+    ESC --> AGGVIEW
+    DROP --> AGGVIEW
+    CHURN --> AGGVIEW
+    SUMM --> DASH
+    NLQ --> DASH
+```
+
+Solid arrows are the always-on path (in-process generation → validation →
+resolution → Postgres → analytics/dashboard). Dashed arrows are additive,
+optional paths: streaming ingestion via Redpanda, and the Snowflake mirror.
+The AI assistant and observability layers only ever read already-computed
+data — neither can affect a resolution decision.
 
 ## Stack
 
@@ -80,9 +194,11 @@ Also needs Postgres reachable (`docker-compose up -d postgres` creates the
 python -m pytest tests/backend -v
 ```
 
-33 tests covering the event generators, identity resolution engine (incl.
+36 tests covering the event generators, identity resolution engine (incl.
 deliberately ambiguous cases), event store, stitching pipeline, journey
-analytics, and the FastAPI/WebSocket integration.
+analytics, and the FastAPI/WebSocket integration — including the access
+gate's reject/accept/disabled paths and the AI assistant's unconfigured
+guard. Run against a real Postgres, including in CI, not sqlite `:memory:`.
 
 ## Run the Phase 6 demo sequence
 
@@ -138,7 +254,8 @@ docker-compose up -d --build
 ```
 
 Brings up the app (`localhost:8000`, password in `DASHBOARD_PASSWORD`, default
-`throughline-demo`), Postgres, Prometheus (`localhost:9090`), Grafana
+`throughline-demo` — leave it unset/empty in `.env` to disable the gate
+entirely, e.g. for a public demo deployment), Postgres, Prometheus (`localhost:9090`), Grafana
 (`localhost:3000`, admin/throughline), a Redpanda broker, Redpanda Console
 (`localhost:8080`), and a `consumer` service continuously reading the
 `throughline.raw-events` topic into the stitching pipeline. This is the full
@@ -188,12 +305,18 @@ that as `SNOWFLAKE_PASSWORD` instead of your login password.
 
 ## Deploying
 
+**Live right now:** [`http://18.60.216.62/`](http://18.60.216.62/) — AWS EC2
+free-tier `t2.micro`, running the current codebase (Postgres, access gate,
+AI assistant) via `docker-compose up -d postgres app`. The access gate is
+switched off on this specific deployment (`DASHBOARD_PASSWORD` left empty)
+so the link is directly usable — see `docs/DEPLOY_EC2.md` for exactly how
+it's set up and why the heavier services (Redpanda/Prometheus/Grafana)
+aren't part of this deployment.
+
 `Dockerfile` builds the frontend and serves it + the API from one FastAPI
-process on port 8000 (no CORS, single origin), and now requires a reachable
+process on port 8000 (no CORS, single origin), and requires a reachable
 Postgres via `DATABASE_URL` — see `docker-compose.yml` for the full stack, or
 point `DATABASE_URL` at any Postgres instance for a standalone `docker run`.
-See `docs/DEPLOY_EC2.md` for a free-tier AWS EC2 walkthrough (that document's
-own note explains why the live instance still runs the pre-Postgres image).
 
 ```bash
 docker build -t throughline .
@@ -203,30 +326,48 @@ docker run -d -p 80:8000 -e DATABASE_URL=postgresql://user:pass@host:5432/db thr
 ## Repo layout
 
 ```
-/docs   proposal.md (Round 1 submission), architecture.mmd/.svg/.png
+/.github/workflows   tests.yml (CI: pytest against a real Postgres service container)
+/docs   proposal.md (Round 1 submission), DEPLOY_EC2.md, architecture.mmd/.svg/.png
 /deck   generate_deck.py, capture_screenshots.py, screenshots/, Throughline_Deck.pptx
 /video  record_demo.py (Playwright, paced w/ on-screen captions), demo.webm
+/docker prometheus.yml, grafana provisioning (datasource + dashboard), postgres init.sql
 /src
-  /backend   FastAPI app, generators, resolution engine, store, pipeline, analytics
-  /frontend  React + Vite dashboard (journey timeline, aggregate view, resolution demo)
-/tests/backend   pytest suite (33 tests)
+  /backend
+    main.py           FastAPI app: routes, auth gate, lifespan/auto-seed
+    resolution.py      identity resolution engine (validation + 2-tier matching)
+    pipeline.py        stitching pipeline (normalize, insert, per-event latency)
+    store.py           Postgres event store (psycopg3, no ORM)
+    analytics.py        repeat-contact / escalation / drop-off / churn detection
+    generators.py       synthetic multi-channel dataset generator
+    metrics.py          Prometheus metric definitions
+    ai_assistant.py      Gemini-backed NL summary/query, presentation layer only
+    /streaming          Redpanda producer.py / consumer.py
+    /warehouse          snowflake_mirror.py (one-way Postgres -> Snowflake batch export)
+  /frontend  React + Vite dashboard (login screen, journey timeline, aggregate view, resolution demo)
+docker-compose.yml      app, postgres, prometheus, grafana, redpanda, redpanda-console, consumer
+/tests/backend   pytest suite (36 tests), run against real Postgres in CI
 ```
 
 ## Measured results (not estimates)
 
-Run against the live server via `time.perf_counter()`, same methodology
-throughout:
+Re-measured against the live local stack (Postgres, not the original SQLite),
+same 28-event / 13-resolved-customer seeded scenario used throughout:
 
-- **Identity resolution accuracy:** 100% on the seeded set (28 events, 14
-  customers), including both deliberately ambiguous cases — a shared-device
-  pair and a true orphan phone number — correctly left `unresolved` rather
-  than force-matched.
-- **Pipeline latency:** ~6.28ms average per event, ingestion through
-  placement on a resolved timeline (real SQLite file writes).
+- **Identity resolution accuracy:** 100% on the seeded set, including both
+  deliberately ambiguous cases — a shared-device pair and a true orphan
+  phone number — correctly left `unresolved` rather than force-matched.
+- **Pipeline latency:** varies by run/system load with Postgres in the loop
+  — observed 2.6ms-7.3ms average per event across consecutive runs on the
+  same machine. Not a single fixed number; re-run `/seed` and read
+  `avg_latency_per_event_ms` for a fresh figure, or watch the histogram live
+  in Grafana.
 - **Pattern actionability:** 8 distinct ranked journey shapes surfaced from
   the seeded data; 3 concrete drop-off points identified; churn correlation
-  shows customers with 2+ friction events return 5x less often than
-  clean-journey customers.
+  shows high-friction customers average 1.0 trailing-activity events vs. 5.0
+  for clean customers — a 5x gap, re-confirmed on a fresh, truncated-then-
+  reseeded run.
+- **No larger synthetic run has been done.** Every number above is on the
+  original fixed 28-event scenario, not a stress test.
 
 See `docs/proposal.md` for full detail on how each metric was measured.
 

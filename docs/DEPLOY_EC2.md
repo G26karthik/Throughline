@@ -1,9 +1,14 @@
-> **Note:** this document describes the original single-container SQLite deploy,
-> still what the live instance runs. The app now requires Postgres
-> (`DATABASE_URL`), so don't `git pull && docker build` on this instance without
-> also standing up Postgres there — see `docker-compose.yml` for the full stack,
-> which needs more RAM than this instance's free-tier t2.micro has. Redeploying
-> the current stack to EC2 is a follow-up decision, not yet done.
+> **Note:** the steps below describe the original single-container SQLite
+> deploy, kept for reference. The live instance has since moved on to
+> `docker-compose` running just `postgres` + `app` (built via
+> `docker-compose up -d --build postgres app`, not the full stack — Redpanda/
+> Prometheus/Grafana don't fit this instance's free-tier t2.micro's ~900MB
+> RAM, so those stay local-only). `DASHBOARD_PASSWORD` is left empty on this
+> instance specifically so the public link isn't gated behind a password
+> nobody has; `GEMINI_API_KEY` is set so the AI assistant works live too.
+> `docker-compose.yml` needs `docker compose`/`docker-compose` v2-equivalent
+> and a recent `buildx` (0.17+) — neither came with this AMI's base `docker`
+> package, both had to be installed separately.
 
 # Deploying to AWS EC2 (Free Tier)
 
