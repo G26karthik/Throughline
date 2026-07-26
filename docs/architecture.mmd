@@ -44,6 +44,8 @@ flowchart TD
         GRAF["Grafana dashboard"]
     end
 
+    SNOW[("Snowflake\none-way batch mirror,\nrun manually - not scheduled")]
+
     GATE{"Access gate\n(shared password -> session token)"}
 
     subgraph DASH["Dashboard"]
@@ -51,10 +53,10 @@ flowchart TD
         AGGVIEW["Aggregate pattern view\n(unresolved cases, journey shapes,\nchurn signal)"]
     end
 
-    APP --> DET
-    WEB --> DET
-    CALL --> DET
-    INP --> DET
+    APP --> VALID
+    WEB --> VALID
+    CALL --> VALID
+    INP --> VALID
 
     APP -.->|"or produce"| PROD
     WEB -.->|"or produce"| PROD
@@ -63,9 +65,9 @@ flowchart TD
     PROD -.-> CONS
     CONS -.->|"same pipeline, sourced from Kafka/Redpanda"| VALID
 
-    DET --> VALID
-    VALID -->|"hard identifier matched"| NORM
-    VALID -->|"no hard identifier"| PROB
+    VALID --> DET
+    DET -->|"hard identifier matched"| NORM
+    DET -->|"no hard identifier"| PROB
     PROB --> THRESH
     THRESH -->|"yes"| NORM
     THRESH -->|"no"| UNRES
@@ -88,6 +90,7 @@ flowchart TD
     ANALYTICS --> NLQ
 
     PROM --> GRAF
+    STORE -.->|"manual export"| SNOW
 
     GATE --> DASH
     STORE --> TIMELINE
