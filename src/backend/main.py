@@ -14,6 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from pydantic import BaseModel
 
+from src.backend.ai_assistant import query_aggregate, summarize_journey
 from src.backend.analytics import compute_aggregate_analytics, compute_friction
 from src.backend.generators import CUSTOMER_REGISTRY, generate_dataset, generate_trailing_activity
 from src.backend.metrics import ESCALATION_RATE_PCT, HTTP_REQUESTS_TOTAL, RESOLUTION_ACCURACY_PCT
@@ -53,12 +54,17 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class AIQueryRequest(BaseModel):
+    question: str
+
+
 def create_app(db_path: str | None = None) -> FastAPI:
     store = EventStore(get_connection(db_path or os.environ["DATABASE_URL"]))
     manager = ConnectionManager()
     state = {"trailing_activity": []}
     sessions: set[str] = set()
     dashboard_password = os.environ["DASHBOARD_PASSWORD"]
+    gemini_api_key = os.environ.get("GEMINI_API_KEY")
 
     def require_auth(request: Request):
         auth = request.headers.get("authorization", "")
@@ -212,6 +218,43 @@ def create_app(db_path: str | None = None) -> FastAPI:
     )
     def get_aggregate():
         return compute_aggregate_analytics(store, state["trailing_activity"])
+
+    @app.post(
+        "/ai/summarize/{customer_id}", tags=["ai-assistant"],
+        summary="Natural-language journey summary for one resolved customer",
+        description="Plain-English narrative generated from the already-resolved, already-audited timeline -- presentation layer only, zero LLM involvement in the resolution decisions themselves.",
+        dependencies=[Depends(require_auth)],
+    )
+    def ai_summarize(customer_id: str):
+        if not gemini_api_key:
+            raise HTTPException(status_code=503, detail="AI assistant not configured (GEMINI_API_KEY missing)")
+        timeline = _customer_timeline(customer_id)
+        friction = compute_friction(timeline)
+        escalation_refs = set(friction["escalation_chain"]["event_refs"]) if friction["escalation_chain"] else set()
+        for e in timeline:
+            e["is_escalation"] = e["raw_ref"] in escalation_refs
+        summary = summarize_journey(customer_id, {"timeline": timeline, "friction": friction})
+        return {"customer_id": customer_id, "summary": summary}
+
+    @app.post(
+        "/ai/query", tags=["ai-assistant"], summary="Natural-language question over the aggregate view",
+        description="Analyst types a question in plain English (e.g. 'customers who escalated after a failed dispute'); answered by an LLM reading only the already-computed friction data per customer -- never re-derives identity or friction itself.",
+        dependencies=[Depends(require_auth)],
+    )
+    def ai_query(body: AIQueryRequest):
+        if not gemini_api_key:
+            raise HTTPException(status_code=503, detail="AI assistant not configured (GEMINI_API_KEY missing)")
+        customers = []
+        friction_detail = {}
+        for customer_id in store.known_customer_ids():
+            timeline = _customer_timeline(customer_id)
+            friction = compute_friction(timeline)
+            customers.append({
+                "customer_id": customer_id, "event_count": len(timeline),
+                "friction_count": friction["friction_count"],
+            })
+            friction_detail[customer_id] = friction
+        return query_aggregate(body.question, customers, friction_detail)
 
     @app.websocket("/ws")
     async def ws_endpoint(websocket: WebSocket):

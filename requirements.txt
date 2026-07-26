@@ -8,3 +8,4 @@ websockets>=13.1
 psycopg[binary]>=3.2.0
 prometheus-client>=0.21.0
 confluent-kafka>=2.6.0
+google-genai>=1.0.0

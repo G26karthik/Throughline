@@ -153,6 +153,14 @@ docker exec ae-redpanda-1 rpk group describe throughline-pipeline
 
 or visually at `localhost:8080` (Redpanda Console).
 
+**AI analyst assistant** (needs `GEMINI_API_KEY` in `.env`; presentation layer
+only, zero LLM involvement in resolution/analytics decisions):
+
+```bash
+POST /ai/summarize/{customer_id}   # plain-English narrative of a resolved journey
+POST /ai/query {"question": "..."} # natural-language question over already-resolved data
+```
+
 ## Deploying
 
 `Dockerfile` builds the frontend and serves it + the API from one FastAPI

@@ -85,3 +85,12 @@ def test_dashboard_endpoints_reject_missing_or_wrong_credentials():
     with pytest.raises(WebSocketDisconnect):
         with client.websocket_connect("/ws") as ws:
             ws.receive_json()
+
+
+def test_ai_endpoints_503_when_unconfigured(monkeypatch):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    client, _token = make_client()
+    client.post("/seed")
+
+    assert client.post("/ai/summarize/cust_006").status_code == 503
+    assert client.post("/ai/query", json={"question": "anything"}).status_code == 503
