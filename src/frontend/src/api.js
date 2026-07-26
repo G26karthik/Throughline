@@ -7,6 +7,12 @@ export function isAuthenticated() {
   return Boolean(token);
 }
 
+export async function authRequired() {
+  const res = await fetch(`${BASE}/auth/status`);
+  const body = await res.json();
+  return body.auth_required;
+}
+
 export function logout() {
   token = null;
   sessionStorage.removeItem(TOKEN_KEY);

@@ -87,6 +87,19 @@ def test_dashboard_endpoints_reject_missing_or_wrong_credentials():
             ws.receive_json()
 
 
+def test_dashboard_auth_can_be_disabled_via_empty_password(monkeypatch):
+    monkeypatch.delenv("DASHBOARD_PASSWORD", raising=False)
+    app = create_app(db_path=TEST_DATABASE_URL)
+    client = TestClient(app)
+
+    assert client.get("/auth/status").json() == {"auth_required": False}
+    # no Authorization header at all -- still succeeds
+    assert client.get("/customers").status_code == 200
+    with client.websocket_connect("/ws") as ws:
+        client.post("/demo/run", params={"delay_seconds": 0})
+        assert ws.receive_json()["type"] == "scattered"
+
+
 def test_ai_endpoints_503_when_unconfigured(monkeypatch):
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     client, _token = make_client()

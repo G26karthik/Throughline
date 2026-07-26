@@ -63,10 +63,12 @@ def create_app(db_path: str | None = None) -> FastAPI:
     manager = ConnectionManager()
     state = {"trailing_activity": []}
     sessions: set[str] = set()
-    dashboard_password = os.environ["DASHBOARD_PASSWORD"]
+    dashboard_password = os.environ.get("DASHBOARD_PASSWORD", "")
     gemini_api_key = os.environ.get("GEMINI_API_KEY")
 
     def require_auth(request: Request):
+        if not dashboard_password:
+            return
         auth = request.headers.get("authorization", "")
         token = auth.removeprefix("Bearer ").strip()
         if not token or token not in sessions:
@@ -133,6 +135,13 @@ def create_app(db_path: str | None = None) -> FastAPI:
     @app.get("/health", tags=["ops"], summary="Liveness check", description="Cheap process-alive check, no dependency calls. Used by the deploy target's health probe.")
     def health():
         return {"status": "ok"}
+
+    @app.get(
+        "/auth/status", tags=["auth"], summary="Whether the dashboard access gate is enabled on this deployment",
+        description="Lets the frontend skip the login screen entirely when DASHBOARD_PASSWORD isn't set (e.g. a public demo deployment) rather than blocking on a password nobody has.",
+    )
+    def auth_status():
+        return {"auth_required": bool(dashboard_password)}
 
     @app.post(
         "/auth/login", tags=["auth"], summary="Exchange the shared dashboard password for a session token",
@@ -258,10 +267,11 @@ def create_app(db_path: str | None = None) -> FastAPI:
 
     @app.websocket("/ws")
     async def ws_endpoint(websocket: WebSocket):
-        token = websocket.query_params.get("token", "")
-        if token not in sessions:
-            await websocket.close(code=4401)
-            return
+        if dashboard_password:
+            token = websocket.query_params.get("token", "")
+            if token not in sessions:
+                await websocket.close(code=4401)
+                return
         await manager.connect(websocket)
         try:
             while True:
